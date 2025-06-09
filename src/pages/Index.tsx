@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,20 +58,36 @@ const Index = () => {
     try {
       console.log('Fetching playlist:', playlistId);
       
-      // Use a CORS proxy to fetch the YouTube playlist page
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(playlistUrl)}`;
-      const response = await fetch(proxyUrl);
+      // Try multiple CORS proxy services for better reliability
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(playlistUrl)}`,
+        `https://cors-anywhere.herokuapp.com/${playlistUrl}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(playlistUrl)}`
+      ];
       
-      if (!response.ok) {
-        throw new Error(`Failed to fetch playlist: ${response.status}`);
+      let response;
+      let error;
+      
+      for (const proxyUrl of proxies) {
+        try {
+          console.log('Trying proxy:', proxyUrl);
+          response = await fetch(proxyUrl);
+          if (response.ok) break;
+        } catch (e) {
+          error = e;
+          console.log('Proxy failed, trying next...');
+        }
       }
       
-      const data = await response.json();
-      const html = data.contents;
+      if (!response || !response.ok) {
+        throw new Error(`All proxies failed. Last error: ${response?.status || 'Network error'}`);
+      }
+      
+      const data = await response.text();
       
       console.log('HTML fetched, parsing video IDs...');
       
-      const videoIds = parseVideoIdsFromHtml(html);
+      const videoIds = parseVideoIdsFromHtml(data);
       console.log(`Found ${videoIds.length} video IDs:`, videoIds);
       
       if (videoIds.length === 0) {
