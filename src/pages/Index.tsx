@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,7 @@ import { Download, Music, Youtube, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
-  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [playlistUrls, setPlaylistUrls] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [jsonOutput, setJsonOutput] = useState('');
   const [copied, setCopied] = useState(false);
@@ -18,6 +19,26 @@ const Index = () => {
     const regex = /[?&]list=([a-zA-Z0-9_-]+)/;
     const match = url.match(regex);
     return match ? match[1] : null;
+  };
+
+  const extractPlaylistName = (html: string) => {
+    // Try to extract playlist name from various possible locations in the HTML
+    const patterns = [
+      /<meta property="og:title" content="([^"]+)"/,
+      /<title>([^<]+)<\/title>/,
+      /"title":"([^"]+)","description"/,
+      /"playlistTitle":"([^"]+)"/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        // Clean up the title (remove " - YouTube" suffix if present)
+        return match[1].replace(/ - YouTube$/, '').trim();
+      }
+    }
+    
+    return 'Untitled Playlist';
   };
 
   const parseVideoIdsFromHtml = (html: string) => {
@@ -34,20 +55,12 @@ const Index = () => {
   };
 
   const generatePipedJson = async () => {
-    if (!playlistUrl.trim()) {
+    const urls = playlistUrls.trim().split('\n').filter(url => url.trim());
+    
+    if (urls.length === 0) {
       toast({
         title: "Error",
-        description: "Please enter a YouTube playlist URL",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const playlistId = extractPlaylistId(playlistUrl);
-    if (!playlistId) {
-      toast({
-        title: "Invalid URL",
-        description: "Please enter a valid YouTube playlist URL",
+        description: "Please enter at least one YouTube playlist URL",
         variant: "destructive",
       });
       return;
@@ -56,68 +69,99 @@ const Index = () => {
     setIsLoading(true);
     
     try {
-      console.log('Fetching playlist:', playlistId);
-      
-      // Try multiple CORS proxy services for better reliability
-      const proxies = [
-        `https://corsproxy.io/?${encodeURIComponent(playlistUrl)}`,
-        `https://cors-anywhere.herokuapp.com/${playlistUrl}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(playlistUrl)}`
-      ];
-      
-      let response;
-      let error;
-      
-      for (const proxyUrl of proxies) {
-        try {
-          console.log('Trying proxy:', proxyUrl);
-          response = await fetch(proxyUrl);
-          if (response.ok) break;
-        } catch (e) {
-          error = e;
-          console.log('Proxy failed, trying next...');
+      const playlists = [];
+      const allSongs = [];
+      let songCounter = 1;
+
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i].trim();
+        const playlistId = extractPlaylistId(url);
+        
+        if (!playlistId) {
+          console.warn(`Invalid URL skipped: ${url}`);
+          continue;
         }
+
+        console.log(`Fetching playlist ${i + 1}:`, playlistId);
+        
+        // Try multiple CORS proxy services for better reliability
+        const proxies = [
+          `https://corsproxy.io/?${encodeURIComponent(url)}`,
+          `https://cors-anywhere.herokuapp.com/${url}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        ];
+        
+        let response;
+        let error;
+        
+        for (const proxyUrl of proxies) {
+          try {
+            console.log('Trying proxy:', proxyUrl);
+            response = await fetch(proxyUrl);
+            if (response.ok) break;
+          } catch (e) {
+            error = e;
+            console.log('Proxy failed, trying next...');
+          }
+        }
+        
+        if (!response || !response.ok) {
+          console.error(`Failed to fetch playlist ${playlistId}:`, response?.status || 'Network error');
+          continue;
+        }
+        
+        const data = await response.text();
+        
+        console.log(`HTML fetched for playlist ${i + 1}, parsing...`);
+        
+        const playlistName = extractPlaylistName(data);
+        const videoIds = parseVideoIdsFromHtml(data);
+        
+        console.log(`Found ${videoIds.length} video IDs in "${playlistName}":`, videoIds);
+        
+        if (videoIds.length === 0) {
+          console.warn(`No videos found in playlist: ${playlistName}`);
+          continue;
+        }
+
+        // Add playlist info
+        playlists.push({
+          id: playlistId,
+          name: playlistName,
+          n: i + 1
+        });
+
+        // Add songs from this playlist
+        const playlistSongs = videoIds.map((id) => ({
+          id: id,
+          timestamp: new Date().toISOString(),
+          list: playlistId,
+          n: songCounter++
+        }));
+
+        allSongs.push(...playlistSongs);
       }
-      
-      if (!response || !response.ok) {
-        throw new Error(`All proxies failed. Last error: ${response?.status || 'Network error'}`);
+
+      if (playlists.length === 0) {
+        throw new Error('No valid playlists were processed');
       }
-      
-      const data = await response.text();
-      
-      console.log('HTML fetched, parsing video IDs...');
-      
-      const videoIds = parseVideoIdsFromHtml(data);
-      console.log(`Found ${videoIds.length} video IDs:`, videoIds);
-      
-      if (videoIds.length === 0) {
-        throw new Error('No video IDs found in playlist');
-      }
-      
-      // Convert to Piped Music format
-      const songs = videoIds.map((id, index) => ({
-        id: id,
-        timestamp: new Date().toISOString(),
-        list: "liked",
-        n: index + 1
-      }));
 
       const pipedFormat = {
-        playlists: [],
-        songs: songs
+        playlists: playlists,
+        songs: allSongs
       };
 
       setJsonOutput(JSON.stringify(pipedFormat, null, 2));
       
       toast({
         title: "Success!",
-        description: `Converted ${videoIds.length} songs to Piped Music format`,
+        description: `Converted ${playlists.length} playlists with ${allSongs.length} total songs`,
       });
     } catch (error) {
-      console.error('Error converting playlist:', error);
+      console.error('Error converting playlists:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to convert playlist",
+        description: error instanceof Error ? error.message : "Failed to convert playlists",
         variant: "destructive",
       });
     } finally {
@@ -132,7 +176,7 @@ const Index = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'piped-music-playlist.json';
+    a.download = 'piped-music-playlists.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -179,7 +223,7 @@ const Index = () => {
             YouTube to Piped Music
           </h1>
           <p className="text-xl text-gray-300 max-w-2xl mx-auto">
-            Convert your YouTube playlists to Piped Music JSON format for easy backup and migration
+            Convert multiple YouTube playlists to Piped Music JSON format for easy backup and migration
           </p>
         </div>
 
@@ -191,33 +235,33 @@ const Index = () => {
               Playlist Converter
             </CardTitle>
             <CardDescription className="text-gray-300">
-              Enter your YouTube playlist URL below to convert it to Piped Music format
+              Enter your YouTube playlist URLs below (one per line) to convert them to Piped Music format
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* URL Input */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-200">YouTube Playlist URL</label>
-              <div className="flex gap-2">
-                <Input
-                  type="url"
-                  placeholder="https://www.youtube.com/playlist?list=..."
-                  value={playlistUrl}
-                  onChange={(e) => setPlaylistUrl(e.target.value)}
-                  className="flex-1 bg-white/10 border-white/30 text-white placeholder:text-gray-400"
+              <label className="text-sm font-medium text-gray-200">YouTube Playlist URLs (one per line)</label>
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="https://www.youtube.com/playlist?list=...&#10;https://www.youtube.com/playlist?list=..."
+                  value={playlistUrls}
+                  onChange={(e) => setPlaylistUrls(e.target.value)}
+                  className="min-h-[120px] bg-white/10 border-white/30 text-white placeholder:text-gray-400"
+                  rows={5}
                 />
                 <Button 
                   onClick={generatePipedJson}
                   disabled={isLoading}
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8"
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
                 >
                   {isLoading ? (
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Converting...
+                      Converting Playlists...
                     </div>
                   ) : (
-                    'Convert'
+                    'Convert All Playlists'
                   )}
                 </Button>
               </div>
@@ -225,9 +269,10 @@ const Index = () => {
 
             {/* Example */}
             <div className="p-4 bg-blue-500/20 rounded-lg border border-blue-400/30">
-              <div className="text-sm text-blue-200 mb-2">Example URL:</div>
-              <code className="text-blue-100 text-sm break-all">
-                https://www.youtube.com/playlist?list=PL3-sRm8xAzY9gpXTMGVHJWy_FMD67NBed
+              <div className="text-sm text-blue-200 mb-2">Example URLs (one per line):</div>
+              <code className="text-blue-100 text-sm block">
+                https://www.youtube.com/playlist?list=PL3-sRm8xAzY9gpXTMGVHJWy_FMD67NBed<br/>
+                https://www.youtube.com/playlist?list=PLrAl6rYgs4IvGFBDkRJ-WnVzGhD5BOTup
               </code>
             </div>
 
@@ -269,7 +314,10 @@ const Index = () => {
                     Ready for download
                   </Badge>
                   <span className="text-sm text-gray-400">
-                    {jsonOutput ? JSON.parse(jsonOutput).songs.length : 0} songs converted
+                    {jsonOutput ? (() => {
+                      const parsed = JSON.parse(jsonOutput);
+                      return `${parsed.playlists.length} playlists, ${parsed.songs.length} total songs`;
+                    })() : '0 playlists converted'}
                   </span>
                 </div>
               </div>
@@ -282,9 +330,9 @@ const Index = () => {
           <Card className="bg-white/10 backdrop-blur-lg border-white/20 text-center">
             <CardContent className="pt-6">
               <Youtube className="w-12 h-12 text-red-500 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">YouTube Compatible</h3>
+              <h3 className="text-lg font-semibold text-white mb-2">Multiple Playlists</h3>
               <p className="text-gray-300 text-sm">
-                Works with any public YouTube playlist URL
+                Convert multiple YouTube playlists at once
               </p>
             </CardContent>
           </Card>
@@ -292,9 +340,9 @@ const Index = () => {
           <Card className="bg-white/10 backdrop-blur-lg border-white/20 text-center">
             <CardContent className="pt-6">
               <Download className="w-12 h-12 text-green-500 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">Easy Download</h3>
+              <h3 className="text-lg font-semibold text-white mb-2">Organized Export</h3>
               <p className="text-gray-300 text-sm">
-                Download JSON file ready for Piped Music import
+                Each playlist maintains its name and organization
               </p>
             </CardContent>
           </Card>
