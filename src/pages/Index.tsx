@@ -21,6 +21,19 @@ const Index = () => {
     return match ? match[1] : null;
   };
 
+  const parseVideoIdsFromHtml = (html: string) => {
+    // Extract video IDs from the HTML using regex
+    const videoIdRegex = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
+    const videoIds = new Set<string>();
+    let match;
+    
+    while ((match = videoIdRegex.exec(html)) !== null) {
+      videoIds.add(match[1]);
+    }
+    
+    return Array.from(videoIds);
+  };
+
   const generatePipedJson = async () => {
     if (!playlistUrl.trim()) {
       toast({
@@ -43,29 +56,58 @@ const Index = () => {
 
     setIsLoading(true);
     
-    // Simulate API call delay
-    setTimeout(() => {
-      // Mock data for demonstration - in real implementation, this would call YouTube API
-      const mockSongs = [
-        { id: "2GogVZiVFxM", timestamp: new Date().toISOString(), list: "liked", n: 1 },
-        { id: "xW17jtkjvvg", timestamp: new Date().toISOString(), list: "liked", n: 2 },
-        { id: "eUGR2GzcaOM", timestamp: new Date().toISOString(), list: "liked", n: 3 },
-        { id: "r9F2FrmnUdk", timestamp: new Date().toISOString(), list: "liked", n: 4 }
-      ];
+    try {
+      console.log('Fetching playlist:', playlistId);
+      
+      // Use a CORS proxy to fetch the YouTube playlist page
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(playlistUrl)}`;
+      const response = await fetch(proxyUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch playlist: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const html = data.contents;
+      
+      console.log('HTML fetched, parsing video IDs...');
+      
+      const videoIds = parseVideoIdsFromHtml(html);
+      console.log(`Found ${videoIds.length} video IDs:`, videoIds);
+      
+      if (videoIds.length === 0) {
+        throw new Error('No video IDs found in playlist');
+      }
+      
+      // Convert to Piped Music format
+      const songs = videoIds.map((id, index) => ({
+        id: id,
+        timestamp: new Date().toISOString(),
+        list: "liked",
+        n: index + 1
+      }));
 
       const pipedFormat = {
         playlists: [],
-        songs: mockSongs
+        songs: songs
       };
 
       setJsonOutput(JSON.stringify(pipedFormat, null, 2));
-      setIsLoading(false);
       
       toast({
         title: "Success!",
-        description: "Playlist converted to Piped Music format",
+        description: `Converted ${videoIds.length} songs to Piped Music format`,
       });
-    }, 2000);
+    } catch (error) {
+      console.error('Error converting playlist:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to convert playlist",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const downloadJson = () => {
