@@ -4,6 +4,8 @@
 
 This project allows you to convert multiple YouTube playlists into the [Piped Music](https://git.codespace.cz/PipedMusic/PipedMusic) JSON format. It is designed for easy backup and migration of your playlists to the Piped Music app. Simply paste your YouTube playlist URLs, and the app will generate a compatible JSON file for download or import.
 
+**Live App:** [https://yt2pm-playlist.lovable.app/](https://yt2pm-playlist.lovable.app/)
+
 ## Project info
 
 **URL**: https://lovable.dev/projects/53cdc0d9-1432-4ac9-a513-5f6a69ff7fb3
