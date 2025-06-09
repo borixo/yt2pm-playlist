@@ -244,7 +244,8 @@ const Index = () => {
               <label className="text-sm font-medium text-gray-200">YouTube Playlist URLs (one per line)</label>
               <div className="space-y-2">
                 <Textarea
-                  placeholder="https://www.youtube.com/playlist?list=...&#10;https://www.youtube.com/playlist?list=..."
+                    placeholder={`https://www.youtube.com/playlist?list=...
+https://www.youtube.com/playlist?list=...`}
                   value={playlistUrls}
                   onChange={(e) => setPlaylistUrls(e.target.value)}
                   className="min-h-[120px] bg-white/10 border-white/30 text-white placeholder:text-gray-400"
@@ -272,7 +273,7 @@ const Index = () => {
               <div className="text-sm text-blue-200 mb-2">Example URLs (one per line):</div>
               <code className="text-blue-100 text-sm block">
                 https://www.youtube.com/playlist?list=PL3-sRm8xAzY9gpXTMGVHJWy_FMD67NBed<br/>
-                https://www.youtube.com/playlist?list=PLrAl6rYgs4IvGFBDkRJ-WnVzGhD5BOTup
+                https://www.youtube.com/playlist?list=PLP32wGpgzmIlInfgKVFfCwVsxgGqZNIiS<br/>
               </code>
             </div>
 
