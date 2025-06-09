@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,7 +222,16 @@ const Index = () => {
             YouTube to Piped Music
           </h1>
           <p className="text-xl text-gray-300 max-w-2xl mx-auto">
-            Convert multiple YouTube playlists to Piped Music JSON format for easy backup and migration
+            Convert multiple YouTube playlists to{' '}
+            <a
+              href="https://git.codespace.cz/PipedMusic/PipedMusic"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline text-pink-300 hover:text-pink-400"
+            >
+              Piped Music
+            </a>{' '}
+            JSON format for easy backup and migration
           </p>
         </div>
 
