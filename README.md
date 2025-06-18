@@ -1,10 +1,40 @@
-# Welcome to your Lovable project
+# Playlist to Piped Music Converter
 
 ## About
 
-This project allows you to convert multiple YouTube playlists into the [Piped Music](https://git.codespace.cz/PipedMusic/PipedMusic) JSON format. It is designed for easy backup and migration of your playlists to the Piped Music app. Simply paste your YouTube playlist URLs, and the app will generate a compatible JSON file for download or import.
+This project allows you to convert both YouTube and Spotify playlists into the [Piped Music](https://git.codespace.cz/PipedMusic/PipedMusic) JSON format. It is designed for easy backup and migration of your playlists to the Piped Music app.
+
+### Features
+- ✅ **YouTube Playlists**: Paste YouTube playlist URLs for direct conversion
+- ✅ **Spotify Playlists**: Convert Spotify playlists using manual input method
+- ✅ **Smart Search**: Automatically finds YouTube videos for Spotify tracks
+- ✅ **Multiple Playlists**: Process multiple YouTube playlists at once
+- ✅ **Piped Music Compatible**: Perfect JSON structure for Piped Music app
 
 **Live App:** [https://yt2pm-playlist.lovable.app/](https://yt2pm-playlist.lovable.app/)
+
+## How to Use
+
+### YouTube Playlists
+1. Click the "YouTube" tab
+2. Paste your YouTube playlist URLs (one per line)
+3. Click "Convert YouTube Playlists"
+4. Download the generated JSON file
+
+### Spotify Playlists
+1. Click the "Spotify" tab
+2. Format your playlist data as:
+   ```
+   Playlist Name
+   Artist 1 - Song Title 1
+   Artist 2 - Song Title 2
+   ```
+3. Paste the formatted data
+4. Click "Convert Spotify Playlist"
+5. Wait for YouTube search to complete
+6. Download the generated JSON file
+
+For detailed Spotify instructions, see [SPOTIFY_SUPPORT.md](SPOTIFY_SUPPORT.md).
 
 ## Project info
 
