@@ -445,7 +445,7 @@ https://www.youtube.com/playlist?list=...`}
             </div>
 
             {/* Examples */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div className="p-4 bg-blue-500/20 rounded-lg border border-blue-400/30">
                 <div className="text-sm text-blue-200 mb-2">YouTube Example URLs:</div>
                 <code className="text-blue-100 text-sm block">
