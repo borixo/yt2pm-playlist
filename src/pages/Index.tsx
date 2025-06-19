@@ -6,11 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Download, Music, Youtube, Copy, Check, Disc3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 
 const Index = () => {
   const [playlistUrls, setPlaylistUrls] = useState('');
-  const [spotifyUrls, setSpotifyUrls] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [jsonOutput, setJsonOutput] = useState('');
   const [copied, setCopied] = useState(false);
@@ -46,17 +45,18 @@ const Index = () => {
     // Extract video IDs from the HTML using regex
     const videoIdRegex = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
     const videoIds = new Set<string>();
-    let match;
-    
+    let match: RegExpExecArray | null;
+
     while ((match = videoIdRegex.exec(html)) !== null) {
       videoIds.add(match[1]);
     }
-    
+
     return Array.from(videoIds);
   };
 
   const extractSpotifyPlaylistId = (url: string) => {
-    const regex = /playlist\/([a-zA-Z0-9]+)/;
+    // Updated regex to handle more characters in Spotify playlist IDs and ignore query parameters
+    const regex = /playlist\/([a-zA-Z0-9_-]+)/;
     const match = url.match(regex);
     return match ? match[1] : null;
   };
@@ -151,20 +151,28 @@ const Index = () => {
     }
   };
 
+  const isSpotifyUrl = (url: string) => {
+    return url.includes('spotify.com/playlist/');
+  };
+
+  const isYouTubeUrl = (url: string) => {
+    return url.includes('youtube.com/playlist') || url.includes('youtu.be/playlist');
+  };
+
   const generatePipedJson = async () => {
     const urls = playlistUrls.trim().split('\n').filter(url => url.trim());
-    
+
     if (urls.length === 0) {
       toast({
         title: "Error",
-        description: "Please enter at least one YouTube playlist URL",
+        description: "Please enter at least one playlist URL",
         variant: "destructive",
       });
       return;
     }
 
     setIsLoading(true);
-    
+
     try {
       const playlists = [];
       const allSongs = [];
@@ -172,71 +180,113 @@ const Index = () => {
 
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i].trim();
-        const playlistId = extractPlaylistId(url);
-        
-        if (!playlistId) {
-          console.warn(`Invalid URL skipped: ${url}`);
-          continue;
-        }
 
-        console.log(`Fetching playlist ${i + 1}:`, playlistId);
-        
-        // Try multiple CORS proxy services for better reliability
-        const proxies = [
-          `https://corsproxy.io/?${encodeURIComponent(url)}`,
-          `https://cors-anywhere.herokuapp.com/${url}`,
-          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
-        ];
-        
-        let response;
-        let error;
-        
-        for (const proxyUrl of proxies) {
-          try {
-            console.log('Trying proxy:', proxyUrl);
-            response = await fetch(proxyUrl);
-            if (response.ok) break;
-          } catch (e) {
-            error = e;
-            console.log('Proxy failed, trying next...');
+        if (isSpotifyUrl(url)) {
+          // Handle Spotify playlist
+          const playlistId = extractSpotifyPlaylistId(url);
+
+          if (!playlistId) {
+            console.warn(`Invalid Spotify URL skipped: ${url}`);
+            continue;
           }
-        }
-        
-        if (!response || !response.ok) {
-          console.error(`Failed to fetch playlist ${playlistId}:`, response?.status || 'Network error');
-          continue;
-        }
-        
-        const data = await response.text();
-        
-        console.log(`HTML fetched for playlist ${i + 1}, parsing...`);
-        
-        const playlistName = extractPlaylistName(data);
-        const videoIds = parseVideoIdsFromHtml(data);
-        
-        console.log(`Found ${videoIds.length} video IDs in "${playlistName}":`, videoIds);
-        
-        if (videoIds.length === 0) {
-          console.warn(`No videos found in playlist: ${playlistName}`);
-          continue;
-        }
 
-        // Add playlist info
-        playlists.push({
-          id: playlistId,
-          name: playlistName,
-          n: i + 1
-        });
+          console.log(`Fetching Spotify playlist ${i + 1}:`, playlistId);
 
-        // Add songs from this playlist
-        const playlistSongs = videoIds.map((id) => ({
-          id: id,
-          timestamp: new Date().toISOString(),
-          list: playlistId,
-          n: songCounter++
-        }));
+          try {
+            const spotifyPlaylist = await fetchSpotifyPlaylist(playlistId);
 
-        allSongs.push(...playlistSongs);
+            // Add playlist info
+            playlists.push({
+              id: playlistId,
+              name: spotifyPlaylist.name,
+              n: i + 1
+            });
+
+            // Search YouTube for each track and add to songs
+            for (const track of spotifyPlaylist.tracks) {
+              const searchQuery = `${track.title} ${track.artist}`;
+              const videoId = await searchYouTube(searchQuery);
+
+              if (videoId) {
+                allSongs.push({
+                  id: videoId,
+                  timestamp: new Date().toISOString(),
+                  list: playlistId,
+                  n: songCounter++
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`Error processing Spotify playlist ${playlistId}:`, error);
+          }
+        } else if (isYouTubeUrl(url)) {
+          // Handle YouTube playlist
+          const playlistId = extractPlaylistId(url);
+
+          if (!playlistId) {
+            console.warn(`Invalid YouTube URL skipped: ${url}`);
+            continue;
+          }
+
+          console.log(`Fetching YouTube playlist ${i + 1}:`, playlistId);
+
+          // Try multiple CORS proxy services for better reliability
+          const proxies = [
+            `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            `https://cors-anywhere.herokuapp.com/${url}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+          ];
+
+          let response: Response | undefined;
+
+          for (const proxyUrl of proxies) {
+            try {
+              console.log('Trying proxy:', proxyUrl);
+              response = await fetch(proxyUrl);
+              if (response.ok) break;
+            } catch (e) {
+              console.log('Proxy failed, trying next...');
+            }
+          }
+
+          if (!response || !response.ok) {
+            console.error(`Failed to fetch playlist ${playlistId}:`, response?.status || 'Network error');
+            continue;
+          }
+
+          const data = await response.text();
+
+          console.log(`HTML fetched for playlist ${i + 1}, parsing...`);
+
+          const playlistName = extractPlaylistName(data);
+          const videoIds = parseVideoIdsFromHtml(data);
+
+          console.log(`Found ${videoIds.length} video IDs in "${playlistName}":`, videoIds);
+
+          if (videoIds.length === 0) {
+            console.warn(`No videos found in playlist: ${playlistName}`);
+            continue;
+          }
+
+          // Add playlist info
+          playlists.push({
+            id: playlistId,
+            name: playlistName,
+            n: i + 1
+          });
+
+          // Add songs from this playlist
+          const playlistSongs = videoIds.map((id) => ({
+            id: id,
+            timestamp: new Date().toISOString(),
+            list: playlistId,
+            n: songCounter++
+          }));
+
+          allSongs.push(...playlistSongs);
+        } else {
+          console.warn(`Unsupported URL format skipped: ${url}`);
+        }
       }
 
       if (playlists.length === 0) {
@@ -249,7 +299,7 @@ const Index = () => {
       };
 
       setJsonOutput(JSON.stringify(pipedFormat, null, 2));
-      
+
       toast({
         title: "Success!",
         description: `Converted ${playlists.length} playlists with ${allSongs.length} total songs`,
@@ -266,91 +316,7 @@ const Index = () => {
     }
   };
 
-  const generateFromSpotify = async () => {
-    const urls = spotifyUrls.trim().split('\n').filter(url => url.trim());
-    
-    if (urls.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please enter at least one Spotify playlist URL",
-        variant: "destructive",
-      });
-      return;
-    }
 
-    setIsLoading(true);
-    
-    try {
-      const playlists = [];
-      const allSongs = [];
-      let songCounter = 1;
-
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i].trim();
-        const playlistId = extractSpotifyPlaylistId(url);
-        
-        if (!playlistId) {
-          console.warn(`Invalid Spotify URL skipped: ${url}`);
-          continue;
-        }
-
-        console.log(`Fetching Spotify playlist ${i + 1}:`, playlistId);
-        
-        try {
-          const spotifyPlaylist = await fetchSpotifyPlaylist(playlistId);
-          
-          // Add playlist info
-          playlists.push({
-            id: playlistId,
-            name: spotifyPlaylist.name,
-            n: i + 1
-          });
-          
-          // Search YouTube for each track and add to songs
-          for (const track of spotifyPlaylist.tracks) {
-            const searchQuery = `${track.title} ${track.artist}`;
-            const videoId = await searchYouTube(searchQuery);
-            
-            if (videoId) {
-              allSongs.push({
-                id: videoId,
-                timestamp: new Date().toISOString(),
-                list: playlistId,
-                n: songCounter++
-              });
-            }
-          }
-        } catch (error) {
-          console.error(`Error processing Spotify playlist ${playlistId}:`, error);
-        }
-      }
-
-      if (playlists.length === 0) {
-        throw new Error('No valid Spotify playlists were processed');
-      }
-
-      const pipedFormat = {
-        playlists: playlists,
-        songs: allSongs
-      };
-
-      setJsonOutput(JSON.stringify(pipedFormat, null, 2));
-      
-      toast({
-        title: "Success!",
-        description: `Converted ${playlists.length} Spotify playlists with ${allSongs.length} total songs`,
-      });
-    } catch (error) {
-      console.error('Error converting Spotify playlists:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to convert Spotify playlists",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const downloadJson = () => {
     if (!jsonOutput) return;
@@ -446,98 +412,59 @@ const Index = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <Tabs defaultValue="youtube">
-              <TabsList className="grid grid-cols-2 mb-4">
-                <TabsTrigger value="youtube" className="flex items-center gap-2">
-                  <Youtube className="w-4 h-4" />
-                  YouTube
-                </TabsTrigger>
-                <TabsTrigger value="spotify" className="flex items-center gap-2">
-                  <Disc3 className="w-4 h-4" />
-                  Spotify
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="youtube" className="space-y-6">
-                {/* YouTube URL Input */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-200">YouTube Playlist URLs (one per line)</label>
-                  <div className="space-y-2">
-                    <Textarea
-                      placeholder={`https://www.youtube.com/playlist?list=...
+            {/* Unified URL Input */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-200">
+                Playlist URLs (YouTube or Spotify - one per line)
+              </label>
+              <div className="space-y-2">
+                <Textarea
+                  placeholder={`https://www.youtube.com/playlist?list=...
+https://open.spotify.com/playlist/...
 https://www.youtube.com/playlist?list=...`}
-                      value={playlistUrls}
-                      onChange={(e) => setPlaylistUrls(e.target.value)}
-                      className="min-h-[120px] bg-white/10 border-white/30 text-white placeholder:text-gray-400"
-                      rows={5}
-                    />
-                    <Button 
-                      onClick={generatePipedJson}
-                      disabled={isLoading}
-                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                    >
-                      {isLoading ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Converting Playlists...
-                        </div>
-                      ) : (
-                        'Convert YouTube Playlists'
-                      )}
-                    </Button>
-                  </div>
-                </div>
+                  value={playlistUrls}
+                  onChange={(e) => setPlaylistUrls(e.target.value)}
+                  className="min-h-[120px] bg-white/10 border-white/30 text-white placeholder:text-gray-400"
+                  rows={6}
+                />
+                <Button
+                  onClick={generatePipedJson}
+                  disabled={isLoading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                >
+                  {isLoading ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Converting Playlists...
+                    </div>
+                  ) : (
+                    'Convert Playlists'
+                  )}
+                </Button>
+              </div>
+            </div>
 
-                {/* YouTube Example */}
-                <div className="p-4 bg-blue-500/20 rounded-lg border border-blue-400/30">
-                  <div className="text-sm text-blue-200 mb-2">Example URLs (one per line):</div>
-                  <code className="text-blue-100 text-sm block">
-                    https://www.youtube.com/playlist?list=PL3-sRm8xAzY9gpXTMGVHJWy_FMD67NBed<br/>
-                    https://www.youtube.com/playlist?list=PLP32wGpgzmIlInfgKVFfCwVsxgGqZNIiS<br/>
-                  </code>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="spotify" className="space-y-6">
-                {/* Spotify URL Input */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-200">Spotify Playlist URLs (one per line)</label>
-                  <div className="space-y-2">
-                    <Textarea
-                      placeholder={`https://open.spotify.com/playlist/...
-https://open.spotify.com/playlist/...`}
-                      value={spotifyUrls}
-                      onChange={(e) => setSpotifyUrls(e.target.value)}
-                      className="min-h-[120px] bg-white/10 border-white/30 text-white placeholder:text-gray-400"
-                      rows={5}
-                    />
-                    <Button 
-                      onClick={generateFromSpotify}
-                      disabled={isLoading}
-                      className="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white"
-                    >
-                      {isLoading ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Converting Playlists...
-                        </div>
-                      ) : (
-                        'Convert Spotify Playlists'
-                      )}
-                    </Button>
-                  </div>
-                </div>
+            {/* Examples */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 bg-blue-500/20 rounded-lg border border-blue-400/30">
+                <div className="text-sm text-blue-200 mb-2">YouTube Example URLs:</div>
+                <code className="text-blue-100 text-sm block">
+                  https://www.youtube.com/playlist?list=PL3-sRm8xAzY9gpXTMGVHJWy_FMD67NBed<br/>
+                  https://www.youtube.com/playlist?list=PLP32wGpgzmIlInfgKVFfCwVsxgGqZNIiS<br/>
+                </code>
+              </div>
 
-                {/* Spotify Example */}
-                <div className="p-4 bg-green-500/20 rounded-lg border border-green-400/30">
-                  <div className="text-sm text-green-200 mb-2">Example URLs (one per line):</div>
-                  <code className="text-green-100 text-sm block">
-                    https://open.spotify.com/playlist/6bylhv1iSmMylVzgeWTtkb<br/>
-                    https://open.spotify.com/playlist/2e3dcRuo9uDH6qD3NOGKAL<br/>
-                  </code>
+              <div className="p-4 bg-green-500/20 rounded-lg border border-green-400/30">
+                <div className="text-sm text-green-200 mb-2">Spotify Example URLs:</div>
+                <code className="text-green-100 text-sm block">
+                  https://open.spotify.com/playlist/6bylhv1iSmMylVzgeWTtkb<br/>
+                  https://open.spotify.com/playlist/2e3dcRuo9uDH6qD3NOGKAL<br/>
+                </code>
+                <div className="text-xs text-green-300 mt-2 italic">
+                  Note: Spotify-generated playlists (Discover Weekly, Daily Mix, by Spotify, etc.) are not supported. Only user-created playlists work.
                 </div>
-              </TabsContent>
-            </Tabs>
+              </div>
+            </div>
 
             {/* JSON Output */}
             {jsonOutput && (
