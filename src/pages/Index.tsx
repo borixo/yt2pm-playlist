@@ -532,8 +532,8 @@ https://open.spotify.com/playlist/...`}
                 <div className="p-4 bg-green-500/20 rounded-lg border border-green-400/30">
                   <div className="text-sm text-green-200 mb-2">Example URLs (one per line):</div>
                   <code className="text-green-100 text-sm block">
-                    https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M<br/>
-                    https://open.spotify.com/playlist/37i9dQZF1DWXRqgorJj26U<br/>
+                    https://open.spotify.com/playlist/6bylhv1iSmMylVzgeWTtkb<br/>
+                    https://open.spotify.com/playlist/2e3dcRuo9uDH6qD3NOGKAL<br/>
                   </code>
                 </div>
               </TabsContent>
