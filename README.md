@@ -1,8 +1,54 @@
-# Welcome to your Lovable project
+# YouTube & Spotify to Piped Music Converter
 
 ## About
 
-This project allows you to convert multiple YouTube playlists into the [Piped Music](https://git.codespace.cz/PipedMusic/PipedMusic) JSON format. It is designed for easy backup and migration of your playlists to the Piped Music app. Simply paste your YouTube playlist URLs, and the app will generate a compatible JSON file for download or import.
+This project allows you to convert multiple YouTube and Spotify playlists into the [Piped Music](https://git.codespace.cz/PipedMusic/PipedMusic) JSON format. It is designed for easy backup and migration of your playlists to the Piped Music app. Simply paste your YouTube and Spotify playlist URLs, and the app will generate a compatible JSON file for download or import.
+
+### Features
+
+- **Multi-Platform Support**: Convert both YouTube and Spotify playlists
+- **Batch Processing**: Handle multiple playlists at once
+- **Organized Export**: Each playlist maintains its name and organization
+- **Piped Music Format**: Perfect JSON structure for Piped Music app
+
+### Supported URL Formats
+
+**YouTube:**
+- `https://www.youtube.com/playlist?list=PLAYLIST_ID`
+- `https://youtube.com/playlist?list=PLAYLIST_ID`
+
+**Spotify:**
+- `https://open.spotify.com/playlist/PLAYLIST_ID`
+- `spotify:playlist:PLAYLIST_ID`
+
+### Spotify Web API Integration
+
+This application supports **full Spotify playlist conversion** via the official Spotify Web API.
+
+#### Setup
+
+1. **Get Spotify API Credentials**:
+   - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+   - Create a new app to get your Client ID and Client Secret
+
+2. **Configure Environment Variables**:
+   - Copy `.env.example` to `.env`
+   - Add your Spotify credentials to the `.env` file:
+     ```
+     VITE_SPOTIFY_CLIENT_ID=your_spotify_client_id_here
+     VITE_SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
+     ```
+
+#### How it works
+
+1. **Spotify Playlist Processing**: The app uses Spotify Web API to extract track metadata from playlists
+2. **YouTube Search**: Each track is automatically searched on YouTube to find matching videos
+3. **Video ID Extraction**: YouTube video IDs are collected and added to the Piped Music JSON
+4. **Complete Integration**: No manual steps required - just paste Spotify URLs alongside YouTube URLs
+
+#### Authentication
+
+The application uses Spotify's Client Credentials flow for authentication, which allows access to public playlists without requiring user login.
 
 **Live App:** [https://yt2pm-playlist.lovable.app/](https://yt2pm-playlist.lovable.app/)
 
