@@ -61,13 +61,21 @@ const Index = () => {
     return match ? match[1] : null;
   };
 
-  // Spotify Web API credentials from environment variables
+  // API credentials from environment variables
   const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
   const SPOTIFY_CLIENT_SECRET = import.meta.env.VITE_SPOTIFY_CLIENT_SECRET;
+  const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
+  const RAPIDAPI_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
 
   // Validate environment variables
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
     console.error('Missing Spotify API credentials. Please check your .env file.');
+  }
+  if (!RAPIDAPI_KEY) {
+    console.warn('Missing RapidAPI key. Will use YouTube Data API v3 only.');
+  }
+  if (!YOUTUBE_API_KEY) {
+    console.warn('Missing YouTube API key. RapidAPI will be the only search method.');
   }
 
   const getSpotifyAccessToken = async () => {
@@ -125,30 +133,105 @@ const Index = () => {
     }
   };
 
-  const searchYouTube = async (query: string) => {
+  // Utility function to add delay between requests
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const searchYouTubeRapidAPI = async (query: string) => {
     try {
-      // Using a CORS proxy to access YouTube search
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(
-        `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
-      )}`;
-      
-      const response = await fetch(proxyUrl);
-      
-      if (!response.ok) {
-        throw new Error('Failed to search YouTube');
+      if (!RAPIDAPI_KEY) {
+        return null;
       }
-      
-      const html = await response.text();
-      
-      // Extract first video ID from search results
-      const videoIdRegex = /"videoId":"([a-zA-Z0-9_-]{11})"/;
-      const match = html.match(videoIdRegex);
-      
-      return match ? match[1] : null;
+
+      // Skip empty or very short queries
+      if (!query || query.trim().length < 3) {
+        return null;
+      }
+
+      // Add delay to respect rate limits
+      await delay(500); // Shorter delay for RapidAPI
+
+      const apiUrl = `https://youtube-v2.p.rapidapi.com/search/?query=${encodeURIComponent(query)}&lang=en&order_by=this_month&country=us`;
+
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-host': 'youtube-v2.p.rapidapi.com',
+          'x-rapidapi-key': RAPIDAPI_KEY
+        }
+      });
+
+      if (!response.ok) {
+        console.warn(`RapidAPI YouTube search failed: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.videos && data.videos.length > 0) {
+        return data.videos[0].video_id;
+      }
+
+      return null;
     } catch (error) {
-      console.error('Error searching YouTube:', error);
+      console.warn('RapidAPI YouTube search error:', error);
       return null;
     }
+  };
+
+  const searchYouTubeDataAPI = async (query: string) => {
+    try {
+      if (!YOUTUBE_API_KEY) {
+        return null;
+      }
+
+      // Skip empty or very short queries to save quota
+      if (!query || query.trim().length < 3) {
+        return null;
+      }
+
+      // Add delay to respect rate limits (1 second for Data API)
+      await delay(1000);
+
+      // Use YouTube Data API v3 Search endpoint
+      const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+
+      const response = await fetch(apiUrl);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          const errorData = await response.json();
+          if (errorData.error?.errors?.[0]?.reason === 'quotaExceeded') {
+            console.warn('YouTube Data API quota exceeded. Continuing with RapidAPI only.');
+            return null; // Don't throw error, just return null to continue processing
+          }
+        }
+        console.warn(`YouTube Data API error: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.items && data.items.length > 0) {
+        return data.items[0].id.videoId;
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('YouTube Data API search error:', error);
+      return null; // Don't throw errors, just continue processing
+    }
+  };
+
+  const searchYouTube = async (query: string) => {
+    // Try RapidAPI first (primary method)
+    const rapidApiResult = await searchYouTubeRapidAPI(query);
+    if (rapidApiResult) {
+      return rapidApiResult;
+    }
+
+    // Fallback to YouTube Data API v3
+    console.log('RapidAPI failed, trying YouTube Data API v3 fallback...');
+    return await searchYouTubeDataAPI(query);
   };
 
   const isSpotifyUrl = (url: string) => {
@@ -176,6 +259,7 @@ const Index = () => {
     try {
       const playlists = [];
       const allSongs = [];
+      const failedPlaylists: Array<{url: string, error: string}> = [];
       let songCounter = 1;
 
       for (let i = 0; i < urls.length; i++) {
@@ -203,8 +287,21 @@ const Index = () => {
             });
 
             // Search YouTube for each track and add to songs
-            for (const track of spotifyPlaylist.tracks) {
+            console.log(`Searching YouTube for ${spotifyPlaylist.tracks.length} tracks...`);
+            console.log(`🔍 Using RapidAPI (primary) with YouTube Data API v3 fallback - will process all tracks`);
+
+            for (let trackIndex = 0; trackIndex < spotifyPlaylist.tracks.length; trackIndex++) {
+              const track = spotifyPlaylist.tracks[trackIndex];
+
+              // Skip tracks with missing title or artist
+              if (!track.title || !track.artist) {
+                console.warn(`Skipping track with missing data: ${track.title || 'No title'} - ${track.artist || 'No artist'}`);
+                continue;
+              }
+
               const searchQuery = `${track.title} ${track.artist}`;
+              console.log(`Searching ${trackIndex + 1}/${spotifyPlaylist.tracks.length}: ${searchQuery}`);
+
               const videoId = await searchYouTube(searchQuery);
 
               if (videoId) {
@@ -300,10 +397,18 @@ const Index = () => {
 
       setJsonOutput(JSON.stringify(pipedFormat, null, 2));
 
+      const successMessage = failedPlaylists.length > 0
+        ? `Converted ${playlists.length} playlists with ${allSongs.length} total songs. ${failedPlaylists.length} playlists failed.`
+        : `Converted ${playlists.length} playlists with ${allSongs.length} total songs`;
+
       toast({
-        title: "Success!",
-        description: `Converted ${playlists.length} playlists with ${allSongs.length} total songs`,
+        title: "Conversion Complete!",
+        description: successMessage,
       });
+
+      if (failedPlaylists.length > 0) {
+        console.warn('Failed playlists:', failedPlaylists);
+      }
     } catch (error) {
       console.error('Error converting playlists:', error);
       toast({
@@ -462,6 +567,8 @@ https://www.youtube.com/playlist?list=...`}
                 </code>
                 <div className="text-xs text-green-300 mt-2 italic">
                   Note: Spotify-generated playlists (Discover Weekly, Daily Mix, by Spotify, etc.) are not supported. Only user-created playlists work.
+                  <br/>
+                  YouTube search uses RapidAPI (primary) with YouTube Data API v3 fallback. Processing includes delays between requests.
                 </div>
               </div>
             </div>
